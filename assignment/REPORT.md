@@ -10,8 +10,8 @@ Write each section in your own words, about your own runs. Quote the evidence fi
 On s2, I changed the `myTunnel_exact` entry for `dst_id` 3 (handle 2) to send packets
 out of port 1, back to s1: `table_modify MyIngress.myTunnel_exact MyIngress.myTunnel_forward 2 1`.
 s1 already sends exit 3 to s2, so one packet sent with `--tunnel 3` bounced between them
-for ever. In `loop-before.txt` the packet counts went from [s1 A, s2 B] to [s1 C, s2 D],
-and five seconds later to [s1 E, s2 F]. They kept growing until I exited Mininet.
+for ever. In `loop-before.txt` the packet counts went from s1 58 and s2 52 before sending, to
+s1 384 and s2 378 just after, and s1 1032 and s2 1025 five seconds later. They kept growing until I exited Mininet.
 
 IPv4's TTL doesn't stop a loop in this program either. `ipv4_forward` decrements the
 TTL but never checks it, and `ttl` is a `bit<8>`, so 0 − 1 wraps round to 255 and the
@@ -53,9 +53,12 @@ packets arrived with TTL 64.
   and stayed there five seconds later. That is 9 visits: forwarded 8 times, then dropped
   by s1 when it arrived with 0. This matches the design.
 
+
+
 ## 5. Evaluation
 
-a) The mixed rollout (mixed.txt): what did you predict before running s1 with your new program and s2 with tunnel_v1.p4? What actually happened to delivery, and to the loop? Explain every difference from your prediction, byte by byte if you need to.
+### a) Mixed rollout: s1 new, s2 old (`mixed.txt`)
+
 **Prediction (committed before running it):** s2 still reads `dst_id` correctly and
 delivers the packet to h2, with `hop_limit` 7, because s2 doesn't decrement it. But s2
 parses IPv4 one byte too early. Because it thinks that IPv4 header is valid, its checksum
@@ -63,8 +66,21 @@ update overwrites what is really the IPv4 protocol byte, so h2 may get a packet 
 no longer UDP, and `receive.py` may print nothing. In the loop, only s1 decrements, so it
 should still end, after about twice as many visits (s1 +9, s2 +8).
 
+**What happened:** every prediction held (`mixed.txt`, run 2). The packet reached h2
+with `dst_id` 2 and `hop_limit` `07`: s1 decremented it, and s2 didn't. But the IPv4
+protocol byte arrived as `0d` instead of `11` (UDP). s2 parsed IPv4 starting at the
+`07`, and its checksum update wrote into what is really the protocol byte. So
+`receive.py` printed nothing, although tcpdump shows the packet arrived: the failure is
+silent. The loop still ended, with s1 +9 and s2 +8 (48 → 57, 44 → 52): one upgraded
+switch on the loop is enough, but it takes twice as many visits.
 
-b) Propose a safe way to roll out a header change across a network of switches that can't all be upgraded at once. Compare at least two options (for example a version field, a new EtherType, or ordering fields so old switches still parse them).
+In run 1, only 48 bytes arrived: the 4-byte tunnel header was missing. My tunnel_v1.p4
+still had `packet.emit(hdr.myTunnel)` commented out from Lab Step 6, so s2 never wrote
+the header back. I fixed it and reran the experiment. A bug in the "old" program can
+hide in a mixed network; only the raw bytes revealed it.
+
+### b) Safe rollout
+
 Putting the new field last isn't enough: as a) shows, an old switch can silently
 damage the packet.
 1. **New EtherType** (e.g. `0x1213`): the new program parses both types; senders switch to
@@ -72,18 +88,19 @@ damage the packet.
    recognise instead of corrupting it.
 2. **Two phases:** first deploy a program that reads both formats but still sends the old
    one; once every switch runs it, start sending the new format.
-- I'd combine both, and upgrade a few switches first as a canary.
 
+I'd combine both, and upgrade a few switches first as a canary.
 
-c) Loop protection in the data plane (this hop limit) versus the control plane (Week 3's check_paths()): what can each catch that the other can't? Why do real networks use both?
+### c) Data plane versus control plane
+
 The hop limit catches any loop at run time, whatever caused it, including a table changed
 by hand as in C1. `check_paths()` catches loops and missing routes *before* any traffic,
 and names the exact path, but only for what is in its input data. The hop limit misses
 black holes and only limits the damage, without saying where the loop is. Real networks
 use both: checks to get the routes right, and a hop limit as a last line of defence.
 
+### d) Cost at line rate
 
-d) What would this change cost on a hardware switch running at line rate?
 One extra byte per packet, and 8 more bits to parse and carry through the pipeline. One
 comparison and one subtraction, with no new table and no extra memory, so it fits in an
 existing stage without slowing it. The main cost is operational: recompiling and reloading
@@ -94,13 +111,14 @@ every switch, and the compatibility risk shown in a).
 I used Claude (Anthropic) to explain P4 and BMv2, to debug my mistakes, to propose the
 hop-limit design, to draft the changes to `tunnel.p4`, `send.py` and `receive.py`, and to
 draft this report from my results. I ran every experiment myself, checked the results
-against the switch logs, and can explain every change.
+against the switch logs, and can explain every change. It also helped me find that my first C1 run and my tunnel_v1.p4 used a deparser I had
+left commented out from Step 6, so I fixed it and redid both experiments.
 
 ## Evidence files
 
 | File | What it shows |
 |---|---|
-| `evidence/loop-before.txt` | The loop with your finished lab program: pass counts growing |
-| `evidence/delivery.txt` | Tunnelled delivery with the hop limit, and a plain ping |
-| `evidence/loop-after.txt` | The same loop with your hop limit: pass counts that stop |
-| `evidence/mixed.txt` | The mixed rollout: s1 new, s2 old |
+| `evidence/loop-before.txt` | The loop with the lab program: counts growing (58 → 384 → 1032 on s1) |
+| `evidence/delivery.txt` | Delivery with `hop_limit` 6, a plain ping, and `--hops 1` dropped |
+| `evidence/loop-after.txt` | The same loop with the hop limit: s1 +5, s2 +4, then stops |
+| `evidence/mixed.txt` | The mixed rollout: delivery corrupted, loop ends at s1 +9, s2 +8 |
