@@ -120,3 +120,10 @@ mininet> h1 python3 send.py 10.66.0.2 "only one hop" --tunnel 2 --hops 1
               load      = 'only one hop'
 
 Sent from h1-eth0.
+
+mininet> sh cat logs/h2.txt
+Listening on h2-eth0...
+Received (tunnelled, dst_id=2, hop_limit=6) from 10.66.0.1 to 10.66.0.2, TTL 64: 'to h2'
+
+(Only 'to h2' arrived. 'only one hop' was sent with hop_limit 1: s1 decremented it to 0,
+and s2 dropped it on arrival, so h2 never received it.)

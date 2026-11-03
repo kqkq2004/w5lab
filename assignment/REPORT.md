@@ -2,9 +2,6 @@
 
 Student ID (last 4 digits only): **4966**
 
-Write each section in your own words, about your own runs. Quote the evidence files in
-`assignment/evidence/` that support each point. Delete the instructions in `<!-- -->` as you go.
-
 ## 1. Analysis: the loop
 
 On s2, I changed the `myTunnel_exact` entry for `dst_id` 3 (handle 2) to send packets
