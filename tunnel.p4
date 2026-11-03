@@ -120,16 +120,6 @@ control MyIngress(inout headers hdr,
         default_action = drop();
     }
 
-    // apply {
-    //     if (hdr.myTunnel.isValid()) {
-    //         myTunnel_exact.apply();
-    //     } else if (hdr.ipv4.isValid()) {
-    //         ipv4_lpm.apply();
-    //     } else {
-    //         drop();
-    //     }
-    // }
-
     apply {
         if (hdr.myTunnel.isValid()) {
             if (hdr.myTunnel.hop_limit == 0) {
